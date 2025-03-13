@@ -12,6 +12,8 @@ class OTOC:
     def __init__(self, **kwargs):
         
         self.mfim = kwargs.pop('mfim',0)            # mix field Ising model
+        self.init_temp = kwargs.pop('init_temp', -1)    # temperature of initial thermal state (default maximally mixed)
+        self.rho = kwargs.pop('rho',0)
 
         self.mu = kwargs.pop('mu','X')              # mu (first Pauli): 'X', 'Y', 'Z'
         self.nu = kwargs.pop('nu','X')              # nu (second Pauli): 'X', 'Y', 'Z'
@@ -59,6 +61,7 @@ class OTOC:
         for i, t in enumerate(self.tlist):
             self.otoc_list[i] = self.otoc_t(t)
 
+
         
     def get_std(self):
         ts = self.get_first_peak(self.otoc_list)
@@ -79,19 +82,24 @@ class OTOC:
 
         A = op_dict[self.mu][self.i]
         B = op_dict[self.nu][self.j]
-        rho = kwargs.pop('rho',self.mfim.I)
+        
+        if self.init_temp == -1:
+            self.rho = self.mfim.I/(2**self.mfim.L)
+        else:
+            self.rho = self.gen_thermal_state(self.init_temp, self.mfim.H)
+
         U = spalin.expm(-1j * self.mfim.H * t) # Compute U(t) = exp(-i * H * t)
         U_dag = U.getH()  # Compute U^{\dagger}
         S_i_t = U_dag @ A @ U  # Compute the time-evolved operator S_i(t)
-        product = rho @ S_i_t @ B @ S_i_t @ B  # Compute the product S_i(t) S_j S_i(t) S_j
-        otoc = 1-np.real(product.diagonal().sum())/(2**self.mfim.L)   # Compute the trace of the product:
+        product = self.rho @ S_i_t @ B @ S_i_t @ B  # Compute the product S_i(t) S_j S_i(t) S_j
+        otoc = 1-np.real(product.diagonal().sum())   # Compute the trace of the product:
 
         return otoc
     
     def plot_otoc(self):
 
         plt.figure(figsize=(8,4))
-        plt.plot(self.tlist,self.normalized_otoc_list, label = f'L = {self.mfim.L}, hz = {self.mfim.hz}')
+        plt.plot(self.tlist,self.normalized_otoc_list, label = f'L = {self.mfim.L}, hz = {self.mfim.hz}, $T_0$ = {self.init_temp}')
         plt.axhline(y=1, color='black', linestyle='--')
         plt.xlabel('$t$')
         plt.ylabel(rf"$C^{{{self.mu}{self.nu}}}_{{{self.i}{self.j}}}$")
@@ -104,3 +112,13 @@ class OTOC:
         for i in range(1, len(lst) - 1):
             if lst[i] > lst[i - 1] and lst[i] > lst[i + 1]:
                 return i 
+            
+    @staticmethod
+    def gen_thermal_state(temp, H, k_B=1):
+
+        beta = 1/(k_B * temp)
+        exp = spalin.expm(-beta * H)
+        Z = exp.diagonal().sum()
+        rho = exp/Z
+
+        return rho
