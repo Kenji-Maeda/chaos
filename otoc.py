@@ -1,6 +1,9 @@
 import scipy
 from mfim import MFIM
 import scipy.sparse.linalg as spalin
+from scipy.sparse import csr_matrix, kron
+from functools import reduce
+import ast
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -12,7 +15,9 @@ class OTOC:
     def __init__(self, **kwargs):
         
         self.mfim = kwargs.pop('mfim',0)            # mix field Ising model
-        self.init_temp = kwargs.pop('init_temp', -1)    # temperature of initial thermal state (default maximally mixed)
+        self.init_state = kwargs.pop('init_state', -1)    
+        # initial state: numbers-temperature of thermal state; strings-pure state; -1-maximally mixed
+        self.state_param = kwargs.pop('state_param',0)
         self.rho = kwargs.pop('rho',0)
 
         self.mu = kwargs.pop('mu','X')              # mu (first Pauli): 'X', 'Y', 'Z'
@@ -46,7 +51,7 @@ class OTOC:
         '''
         Compute OTOC list, get standard deviation, extract chaos measure
         '''
-        
+
         self.get_otoc_list()
 
         self.normalized_otoc_list, self.std = self.get_std()
@@ -83,10 +88,16 @@ class OTOC:
         A = op_dict[self.mu][self.i]
         B = op_dict[self.nu][self.j]
         
-        if self.init_temp == -1:
+        if self.init_state == "mixed":
+            rho_pure = self.gen_pure_state([0,0,0,1])
+            self.rho = rho_pure*self.state_param + self.mfim.I/(2**self.mfim.L)*(1-self.state_param)
+        elif isinstance(self.init_state, str):
+            bits = ast.literal_eval(self.init_state)
+            self.rho = self.gen_pure_state(bits)
+        elif self.init_state == -1:
             self.rho = self.mfim.I/(2**self.mfim.L)
         else:
-            self.rho = self.gen_thermal_state(self.init_temp, self.mfim.H)
+            self.rho = self.gen_thermal_state(self.init_state, self.mfim.H)
 
         U = spalin.expm(-1j * self.mfim.H * t) # Compute U(t) = exp(-i * H * t)
         U_dag = U.getH()  # Compute U^{\dagger}
@@ -99,7 +110,7 @@ class OTOC:
     def plot_otoc(self):
 
         plt.figure(figsize=(8,4))
-        plt.plot(self.tlist,self.normalized_otoc_list, label = f'L = {self.mfim.L}, hz = {self.mfim.hz}, $T_0$ = {self.init_temp}')
+        plt.plot(self.tlist,self.normalized_otoc_list, label = f'L = {self.mfim.L}, hz = {self.mfim.hz}, $T_0$ = {self.init_state}')
         plt.axhline(y=1, color='black', linestyle='--')
         plt.xlabel('$t$')
         plt.ylabel(rf"$C^{{{self.mu}{self.nu}}}_{{{self.i}{self.j}}}$")
@@ -123,3 +134,21 @@ class OTOC:
         rho = exp/Z
 
         return rho
+    
+    @staticmethod
+    def gen_pure_state(bits):
+        '''
+        Generate density matrix ρ=∣ψ⟩⟨ψ∣ of a pure state given ψ
+        '''
+
+        ket0 = csr_matrix([[1],[0]])
+        ket1 = csr_matrix([[0],[1]])
+
+        psi = reduce(kron, [(ket0 if b==0 else ket1) for b in bits])
+        rho = psi @ psi.getH()
+        
+        return rho
+
+
+
+
