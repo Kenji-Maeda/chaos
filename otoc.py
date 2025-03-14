@@ -15,9 +15,8 @@ class OTOC:
     def __init__(self, **kwargs):
         
         self.mfim = kwargs.pop('mfim',0)            # mix field Ising model
-        self.init_state = kwargs.pop('init_state', -1)    
-        # initial state: numbers-temperature of thermal state; strings-pure state; -1-maximally mixed
-        self.state_param = kwargs.pop('state_param',0)
+        self.init_state = kwargs.pop('init_state', "mixed")    # initial state: "mixed", "pure", "thermal"
+        self.state_param = kwargs.pop('state_param',0)          # ε for mixed, bits for pure, T for thermal
         self.rho = kwargs.pop('rho',0)
 
         self.mu = kwargs.pop('mu','X')              # mu (first Pauli): 'X', 'Y', 'Z'
@@ -91,13 +90,12 @@ class OTOC:
         if self.init_state == "mixed":
             rho_pure = self.gen_pure_state([0,0,0,1])
             self.rho = rho_pure*self.state_param + self.mfim.I/(2**self.mfim.L)*(1-self.state_param)
-        elif isinstance(self.init_state, str):
-            bits = ast.literal_eval(self.init_state)
-            self.rho = self.gen_pure_state(bits)
-        elif self.init_state == -1:
-            self.rho = self.mfim.I/(2**self.mfim.L)
+        elif self.init_state == "pure":
+            self.rho = self.gen_pure_state(self.state_param)
+        elif self.init_state == "thermal":
+            self.rho = self.gen_thermal_state(self.state_param, self.mfim.H)
         else:
-            self.rho = self.gen_thermal_state(self.init_state, self.mfim.H)
+            self.rho = self.mfim.I/(2**self.mfim.L)
 
         U = spalin.expm(-1j * self.mfim.H * t) # Compute U(t) = exp(-i * H * t)
         U_dag = U.getH()  # Compute U^{\dagger}
