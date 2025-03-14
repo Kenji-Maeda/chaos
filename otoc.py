@@ -108,7 +108,7 @@ class OTOC:
     def plot_otoc(self):
 
         plt.figure(figsize=(8,4))
-        plt.plot(self.tlist,self.normalized_otoc_list, label = f'L = {self.mfim.L}, hz = {self.mfim.hz}, $T_0$ = {self.init_state}')
+        plt.plot(self.tlist,self.normalized_otoc_list, label = f'L = {self.mfim.L}, hz = {self.mfim.hz}')
         plt.axhline(y=1, color='black', linestyle='--')
         plt.xlabel('$t$')
         plt.ylabel(rf"$C^{{{self.mu}{self.nu}}}_{{{self.i}{self.j}}}$")
