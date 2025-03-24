@@ -88,10 +88,10 @@ class OTOC:
         B = op_dict[self.nu][self.j]
         
         if self.init_state == "mixed":
-            rho_pure = self.gen_pure_state([0,0,0,1])
+            rho_pure = self.gen_pure_state([1],[[0,0,0,1]])
             self.rho = rho_pure*self.state_param + self.mfim.I/(2**self.mfim.L)*(1-self.state_param)
         elif self.init_state == "pure":
-            self.rho = self.gen_pure_state(self.state_param)
+            self.rho = self.gen_pure_state(self.state_param[0],self.state_param[1])
         elif self.init_state == "thermal":
             self.rho = self.gen_thermal_state(self.state_param, self.mfim.H)
         else:
@@ -101,7 +101,7 @@ class OTOC:
         U_dag = U.getH()  # Compute U^{\dagger}
         S_i_t = U_dag @ A @ U  # Compute the time-evolved operator S_i(t)
         product = self.rho @ S_i_t @ B @ S_i_t @ B  # Compute the product S_i(t) S_j S_i(t) S_j
-        otoc = 1-np.real(product.diagonal().sum())   # Compute the trace of the product:
+        otoc = 1-np.real(product.diagonal().sum())   # Compute trace
 
         return otoc
     
@@ -134,15 +134,21 @@ class OTOC:
         return rho
     
     @staticmethod
-    def gen_pure_state(bits):
+    def gen_pure_state(coeffs, bits):
         '''
         Generate density matrix ρ=∣ψ⟩⟨ψ∣ of a pure state given ψ
         '''
-
+        
         ket0 = csr_matrix([[1],[0]])
         ket1 = csr_matrix([[0],[1]])
 
-        psi = reduce(kron, [(ket0 if b==0 else ket1) for b in bits])
+        norm_coeffs = coeffs/np.sqrt(np.sum(np.abs(coeffs)**2))
+
+        psi = 0
+
+        for i,c in enumerate(norm_coeffs):
+            psi += c*reduce(kron, [(ket0 if b==0 else ket1) for b in bits[i]])
+            
         rho = psi @ psi.getH()
         
         return rho
