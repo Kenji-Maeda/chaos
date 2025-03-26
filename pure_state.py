@@ -17,8 +17,8 @@ def analysis()
 otoc = OTOC.init()
 
 
-    otoc.state_param = [x1, x2, ..., x16]
-    otoc.analysis()
+# otoc.state_param = [x1, x2, ..., x16]
+# otoc.analysis()
 
 '''
 Plan: 
