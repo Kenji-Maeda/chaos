@@ -37,9 +37,9 @@ class MFIM:
         self.I, self.sx_list, self.sy_list, self.sz_list = self.gen_s0sxsysz()
         self.H = self.hz * sum(self.sz_list) + self.hx * sum(self.sx_list)
 
-        for i in range(self.L):
+        for i in range(self.L-1):
 
-            self.H += -self.J * self.sz_list[i] * self.sz_list[(i+1)%self.L]
+            self.H += -self.J * self.sz_list[i] * self.sz_list[(i+1)]
         
         return 1
     
