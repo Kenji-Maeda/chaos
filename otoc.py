@@ -1,9 +1,8 @@
-import scipy
+from scipy import sparse
 from mfim import MFIM
 import scipy.sparse.linalg as spalin
-from scipy.sparse import csr_matrix, kron
+from scipy.sparse import csr_matrix, kron, eye
 from functools import reduce
-import ast
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -14,8 +13,8 @@ class OTOC:
 
     def __init__(self, **kwargs):
         
-        self.mfim = kwargs.pop('mfim',0)            # mix field Ising model
-        self.init_state = kwargs.pop('init_state', "mixed")    # initial state: "mixed", "pure", "thermal"
+        self.mfim = kwargs.pop('mfim',0)                        # mix field Ising model
+        self.init_state = kwargs.pop('init_state', "mixed")     # initial state: "mixed", "pure", "thermal"
         self.state_param = kwargs.pop('state_param',0)          # ε for mixed, bits for pure, T for thermal
         self.rho = kwargs.pop('rho',0)
 
@@ -27,6 +26,11 @@ class OTOC:
         self.T = kwargs.pop('T',0)                  # T (end time)
         self.tstep = kwargs.pop('tstep',0)          # tstep
         self.Dt = kwargs.pop('Dt',0)                # time interval to extract chaos measure
+
+        self.dynamics = kwargs.pop('dynamics','unitary')    # 'unitary' or 'dephasing'
+        self.location = kwargs.pop('location','boundary')   # location of dissipation: 'boundary' or 'bulk'
+        self.kappa = kwargs.pop('kappa',0)                  # kappa for dephasing
+        self.direction = kwargs.pop('direction','Z')        # direction for dephasing: 'X', 'Z'
 
         self.tlist = 0
         self.otoc_list = 0                          # specified OTOC between time interval [0,T]
@@ -97,13 +101,64 @@ class OTOC:
         else:
             self.rho = self.mfim.I/(2**self.mfim.L)
 
-        U = spalin.expm(-1j * self.mfim.H * t) # Compute U(t) = exp(-i * H * t)
-        U_dag = U.getH()  # Compute U^{\dagger}
-        S_i_t = U_dag @ A @ U  # Compute the time-evolved operator S_i(t)
-        product = self.rho @ S_i_t @ B @ S_i_t @ B  # Compute the product S_i(t) S_j S_i(t) S_j
-        otoc = 1-np.real(product.diagonal().sum())   # Compute trace
+        if self.dynamics == 'unitary':
+            U = spalin.expm(-1j * self.mfim.H * t) # Compute U(t) = exp(-i * H * t)
+            U_dag = U.getH()  # Compute U^{\dagger}
+            S_i_t = U_dag @ A @ U  # Compute the time-evolved operator S_i(t)
+            product = self.rho @ S_i_t @ B @ S_i_t @ B  # Compute the product S_i(t) S_j S_i(t) S_j
+            otoc = 1-np.real(product.diagonal().sum())   # Compute trace
+
+        elif self.dynamics == 'dephasing':
+            # Heisenberg evolution via superoperator
+            vS_i = self.vec(A)
+            vS_i_t = spalin.expm_multiply(self.build_heisenberg_liouvillian() * t, vS_i)
+            S_i_t = self.unvec(vS_i_t, self.mfim.H.shape[0])
+            product = self.rho @ S_i_t @ B @ S_i_t @ B
+            otoc = 1-np.real(product.diagonal().sum())
 
         return otoc
+
+    def build_heisenberg_liouvillian(self):
+        H = self.mfim.H.tocsr().astype(complex)
+        d = H.shape[0]
+        I = eye(d, format='csr', dtype=complex)
+
+        # Hamiltonian part: i(I ⊗ H - H^T ⊗ I)  acting on vec(A)
+        L_H = 1j * (kron(I, H, 'csr') - kron(H.T, I, 'csr'))
+
+        for Lop in self.jump_operators():
+            Lop = Lop.tocsr().astype(complex)
+            Ldag = Lop.getH()
+            LdagL = (Ldag @ Lop).tocsr()
+
+            # vec(L^\dagger A L) = (L^T ⊗ L^\dagger) vec(A)
+            term1 = kron(Lop.T, Ldag, 'csr')
+            # -1/2 {L^\dagger L, A}  ->  -1/2 [ I ⊗ (L^\dagger L) + (L^\dagger L)^T ⊗ I ]
+            term2 = -0.5 * kron(I, LdagL, 'csr')
+            term3 = -0.5 * kron(LdagL.T, I, 'csr')
+
+            L_H = (L_H + term1 + term2 + term3).tocsr()
+
+        return L_H
+
+
+    def jump_operators(self):
+        if self.direction == 'Z':
+            if self.location == 'boundary':
+                # acting sigma_z on site 0 and L-1
+                ops = [self.mfim.sz_list[0], self.mfim.sz_list[self.mfim.L-1]]
+            else:
+                # acting sigma_z on all sites
+                ops = self.mfim.sz_list
+        elif self.direction == 'X':
+            if self.location == 'boundary':
+                # acting sigma_x on site 0 and L-1
+                ops = [self.mfim.sx_list[0], self.mfim.sx_list[self.mfim.L-1]]
+            else:
+                # acting sigma_x on all sites
+                ops = self.mfim.sx_list
+
+        return [(np.sqrt(self.kappa) * op).tocsr().astype(complex) for op in ops]
     
     def plot_otoc(self):
 
@@ -153,6 +208,13 @@ class OTOC:
         
         return rho
 
+    @staticmethod
+    def vec(A):
+        # convert a matrix to a vector ((a,b),(c,d)) -> (a,c,b,d)
+        return np.asarray(A.toarray(), dtype=complex).reshape((-1, 1), order='F')
 
-
+    @staticmethod
+    def unvec(v, d):
+        # convert a vector to a matrix (a,c,b,d) -> ((a,b),(c,d))
+        return sparse.csr_matrix(v.reshape((d, d), order='F'))
 
